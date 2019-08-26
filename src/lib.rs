@@ -74,14 +74,14 @@ const STACK_ALIGNMENT: usize = 16;
 const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
-    fn jump_into(into: *mut *mut c_void) -> !;
-    fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void);
+    fn jump_into(into: *mut [*mut c_void; 5]) -> !;
+    fn jump_swap(from: *mut [*mut c_void; 5], into: *mut [*mut c_void; 5]);
     fn jump_init(
         stack: *mut u8,
         ctx: *mut c_void,
         fnc: *mut c_void,
         func: unsafe extern "C" fn(
-            parent: *mut *mut c_void,
+            parent: *mut [*mut c_void; 5],
             ctxpp: *mut c_void,
             fncpp: *mut c_void,
         ) -> !,
@@ -89,17 +89,17 @@ extern "C" {
 }
 
 struct Context<Y, R> {
-    parent: [*mut c_void; 5],
-    child: [*mut c_void; 5],
+    parent: MaybeUninit<[*mut c_void; 5]>,
+    child: MaybeUninit<[*mut c_void; 5]>,
     arg: MaybeUninit<*mut GeneratorState<Y, R>>,
 }
 
 impl<Y, R> Default for Context<Y, R> {
     fn default() -> Self {
         Context {
-            parent: [ptr::null_mut(); 5],
-            child: [ptr::null_mut(); 5],
-            arg: MaybeUninit::zeroed(),
+            parent: MaybeUninit::uninit(),
+            child: MaybeUninit::uninit(),
+            arg: MaybeUninit::uninit(),
         }
     }
 }
@@ -175,7 +175,11 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
-unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
+unsafe extern "C" fn callback<Y, R, F>(
+    p: *mut [*mut c_void; 5],
+    c: *mut c_void,
+    f: *mut c_void,
+) -> !
 where
     F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
@@ -348,10 +352,11 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
 
 impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
     fn drop(&mut self) {
-        // If we are still able to resume the coroutine, do so. Since we don't
-        // set the argument pointer, `Control::halt()` will return `Canceled`.
+        // If we are still able to resume the coroutine, do so.
         if let Some(x) = self.0.take() {
             unsafe {
+                // set the argument pointer to null, `Control::r#yield()` will return `Canceled`.
+                x.arg.as_mut_ptr().write_volatile(ptr::null_mut());
                 jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
             }
         }
