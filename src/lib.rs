@@ -68,14 +68,14 @@ use core::mem::MaybeUninit;
 #[cfg(has_generator_trait)]
 pub use core::ops::{Generator, GeneratorState};
 use core::pin::Pin;
-use core::ptr::null_mut;
+use core::ptr;
 
 const STACK_ALIGNMENT: usize = 16;
 const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
     fn jump_into(into: *mut *mut c_void) -> !;
-    fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void, arg_ptr: *mut *mut c_void);
+    fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void);
     fn jump_init(
         stack: *mut u8,
         ctx: *mut c_void,
@@ -88,19 +88,17 @@ extern "C" {
     );
 }
 
-#[repr(C)]
 struct Context<Y, R> {
     parent: [*mut c_void; 5],
     child: [*mut c_void; 5],
-
     arg: MaybeUninit<*mut GeneratorState<Y, R>>,
 }
 
 impl<Y, R> Default for Context<Y, R> {
     fn default() -> Self {
         Context {
-            parent: [null_mut(); 5],
-            child: [null_mut(); 5],
+            parent: [ptr::null_mut(); 5],
+            child: [ptr::null_mut(); 5],
             arg: MaybeUninit::zeroed(),
         }
     }
@@ -198,11 +196,7 @@ where
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
-    jump_swap(
-        ctx.child.as_mut_ptr(),
-        p,
-        ctx.arg.as_mut_ptr() as *mut _ as _,
-    );
+    jump_swap(ctx.child.as_mut_ptr(), p);
 
     let fnc = fnc.assume_init();
 
@@ -281,30 +275,27 @@ impl<'a, Y, R> Control<'a, Y, R> {
     /// exists.
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
-            let self_arg = self.0.arg.assume_init();
+            let ptr_arg = self.0.arg.assume_init();
 
             // The parent `Coroutine` object has been dropped. Resume the child
             // coroutine with the Canceled error. It must clean up and exit.
-            if self_arg.is_null() {
+            if ptr_arg.is_null() {
                 return Err(Canceled(()));
             }
 
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
-            *self_arg = GeneratorState::Yielded(arg);
+            *ptr_arg = GeneratorState::Yielded(arg);
 
             // Save our current position and yield control to the parent.
-            jump_swap(
-                self.0.child.as_mut_ptr(),
-                self.0.parent.as_mut_ptr(),
-                self.0.arg.as_mut_ptr() as *mut _ as _,
-            );
+            jump_swap(self.0.child.as_mut_ptr(), self.0.parent.as_mut_ptr());
 
-            let self_arg = self.0.arg.assume_init();
+            // Let the compiler re-read *self.0.arg
+            let ptr_arg = self.0.arg.as_mut_ptr().read_volatile();
 
             // The parent `Coroutine` object has been dropped. Resume the child
             // coroutine with the Canceled error. It must clean up and exit.
-            if self_arg.is_null() {
+            if ptr_arg.is_null() {
                 return Err(Canceled(()));
             }
         }
@@ -333,17 +324,13 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
             None => panic!("Called Generator::resume() after completion!"),
             Some(ref mut p) => unsafe {
                 // Pass the pointer so that the child can move the argument out.
-                p.arg.as_mut_ptr().write(arg.as_mut_ptr());
+                p.arg.as_mut_ptr().write_volatile(arg.as_mut_ptr());
 
                 // Jump back into the child.
-                jump_swap(
-                    p.parent.as_mut_ptr(),
-                    p.child.as_mut_ptr(),
-                    p.arg.as_mut_ptr() as *mut _ as _,
-                );
+                jump_swap(p.parent.as_mut_ptr(), p.child.as_mut_ptr());
 
                 // Clear the pointer as the value is about to become invalid.
-                p.arg.as_mut_ptr().write(null_mut());
+                p.arg.as_mut_ptr().write_volatile(ptr::null_mut());
             },
         }
 
@@ -365,11 +352,7 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
         // set the argument pointer, `Control::halt()` will return `Canceled`.
         if let Some(x) = self.0.take() {
             unsafe {
-                jump_swap(
-                    x.parent.as_mut_ptr(),
-                    x.child.as_mut_ptr(),
-                    x.arg.as_mut_ptr() as *mut _ as _,
-                );
+                jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
             }
         }
     }
