@@ -41,7 +41,7 @@ noreturn nounwind naked
 ; This function performs a bidirectional context switch.
 ; It simply calls setjmp(%from) and then longjmp(%into).
 define dso_local void
-@jump_swap(i8** %from, i8** %into)
+@jump_swap(i8** %from, i8** %into, i8** %arg)
 nounwind
 {
   %retv = call i32 @jump_save(i8** %from)    ; setjmp(%from)
