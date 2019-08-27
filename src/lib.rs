@@ -74,31 +74,32 @@ const STACK_ALIGNMENT: usize = 16;
 const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
-    fn jump_into(into: *mut [*mut c_void; 5]) -> !;
-    fn jump_swap(from: *mut [*mut c_void; 5], into: *mut [*mut c_void; 5]);
+    fn jump_into(into: *mut *mut c_void) -> !;
+    fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void);
     fn jump_init(
         stack: *mut u8,
         ctx: *mut c_void,
         fnc: *mut c_void,
         func: unsafe extern "C" fn(
-            parent: *mut [*mut c_void; 5],
+            parent: *mut *mut c_void,
             ctxpp: *mut c_void,
             fncpp: *mut c_void,
         ) -> !,
     );
 }
 
+#[repr(C, align(16))]
 struct Context<Y, R> {
-    parent: MaybeUninit<[*mut c_void; 5]>,
-    child: MaybeUninit<[*mut c_void; 5]>,
+    parent: [*mut c_void; 5],
+    child: [*mut c_void; 5],
     arg: MaybeUninit<*mut GeneratorState<Y, R>>,
 }
 
 impl<Y, R> Default for Context<Y, R> {
     fn default() -> Self {
         Context {
-            parent: MaybeUninit::uninit(),
-            child: MaybeUninit::uninit(),
+            parent: [ptr::null_mut(); 5],
+            child: [ptr::null_mut(); 5],
             arg: MaybeUninit::uninit(),
         }
     }
@@ -175,11 +176,7 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
-unsafe extern "C" fn callback<Y, R, F>(
-    p: *mut [*mut c_void; 5],
-    c: *mut c_void,
-    f: *mut c_void,
-) -> !
+unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
 where
     F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {

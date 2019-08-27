@@ -30,10 +30,10 @@ alwaysinline nounwind naked returns_twice
 ; This function is essentially what __builtin_longjmp() emits in C.
 ; The purpose is to expose this intrinsic to Rust (without requiring nightly).
 define dso_local void
-@jump_into(i8** %into)
+@jump_into([5 x i8*]* nonnull %into)
 noreturn nounwind naked
 {
-  %buff = bitcast i8** %into to i8*
+  %buff = bitcast [5 x i8*]* %into to i8*
   call void @llvm.eh.sjlj.longjmp(i8* %buff) ; Call longjmp()
   unreachable
 }
@@ -44,7 +44,8 @@ define dso_local void
 @jump_swap([5 x i8*]* nonnull %from, [5 x i8*]* nonnull %into)
 nounwind
 {
-  %retv = call i32 @jump_save([5 x i8*]* %from) returns_twice ; setjmp(%from)
+  ; setjmp(%from)
+  %retv = call i32 @jump_save([5 x i8*]* %from) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %jump, label %done
 
@@ -68,7 +69,8 @@ nounwind
 
   %buff = alloca [5 x i8*], align 16          ; Allocate setjmp() buffer
 
-  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice ; Call setjmp(%buff)
+  ; Call setjmp(%buff)
+  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %next, label %done
 
