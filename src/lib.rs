@@ -74,14 +74,14 @@ const STACK_ALIGNMENT: usize = 16;
 const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
-    fn jump_into(into: *mut *mut c_void) -> !;
-    fn jump_swap(from: *mut *mut c_void, into: *mut *mut c_void);
+    fn jump_into(into: *mut [*mut c_void; 5]) -> !;
+    fn jump_swap(from: *mut [*mut c_void; 5], into: *mut [*mut c_void; 5]);
     fn jump_init(
         stack: *mut u8,
         ctx: *mut c_void,
         fnc: *mut c_void,
         func: unsafe extern "C" fn(
-            parent: *mut *mut c_void,
+            parent: *mut [*mut c_void; 5],
             ctxpp: *mut c_void,
             fncpp: *mut c_void,
         ) -> !,
@@ -176,7 +176,11 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
 
-unsafe extern "C" fn callback<Y, R, F>(p: *mut *mut c_void, c: *mut c_void, f: *mut c_void) -> !
+unsafe extern "C" fn callback<Y, R, F>(
+    p: *mut [*mut c_void; 5],
+    c: *mut c_void,
+    f: *mut c_void,
+) -> !
 where
     F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
@@ -197,7 +201,7 @@ where
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
-    jump_swap(ctx.child.as_mut_ptr(), p);
+    jump_swap(ctx.child.as_mut_ptr() as _, p as _);
 
     let fnc = fnc.assume_init();
 
@@ -211,7 +215,7 @@ where
     }
 
     // We cannot be resumed, so jump away forever.
-    jump_into(ctx.parent.as_mut_ptr());
+    jump_into(ctx.parent.as_mut_ptr() as _);
 }
 
 impl<'a, Y, R> Coroutine<'a, Y, R> {
@@ -289,7 +293,10 @@ impl<'a, Y, R> Control<'a, Y, R> {
             *ptr_arg = GeneratorState::Yielded(arg);
 
             // Save our current position and yield control to the parent.
-            jump_swap(self.0.child.as_mut_ptr(), self.0.parent.as_mut_ptr());
+            jump_swap(
+                self.0.child.as_mut_ptr() as _,
+                self.0.parent.as_mut_ptr() as _,
+            );
 
             // Let the compiler re-read *self.0.arg
             let ptr_arg = self.0.arg.as_mut_ptr().read_volatile();
@@ -328,7 +335,7 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
                 p.arg.as_mut_ptr().write_volatile(arg.as_mut_ptr());
 
                 // Jump back into the child.
-                jump_swap(p.parent.as_mut_ptr(), p.child.as_mut_ptr());
+                jump_swap(p.parent.as_mut_ptr() as _, p.child.as_mut_ptr() as _);
 
                 // Clear the pointer as the value is about to become invalid.
                 p.arg.as_mut_ptr().write_volatile(ptr::null_mut());
@@ -354,7 +361,7 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
             unsafe {
                 // set the argument pointer to null, `Control::r#yield()` will return `Canceled`.
                 x.arg.as_mut_ptr().write_volatile(ptr::null_mut());
-                jump_swap(x.parent.as_mut_ptr(), x.child.as_mut_ptr());
+                jump_swap(x.parent.as_mut_ptr() as _, x.child.as_mut_ptr() as _);
             }
         }
     }
@@ -382,6 +389,39 @@ mod tests {
 
         match Pin::new(&mut coro).resume() {
             GeneratorState::Yielded(1) => {}
+            _ => panic!("unexpected return from resume"),
+        }
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Complete("foo") => {}
+            _ => panic!("unexpected return from resume"),
+        }
+    }
+
+    #[test]
+    fn stackfp() {
+        let mut stack = [1u8; 4096 * 8];
+
+        let mut coro = Coroutine::new(&mut stack, |c| {
+            let mut f = 1.0;
+            let c = c.r#yield(f)?;
+            f = f / 2.0;
+            let c = c.r#yield(f)?;
+            f = f / 2.0;
+            let c = c.r#yield(f)?;
+            c.done("foo")
+        });
+
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(v) if v == 1.0 => {}
+            _ => panic!("unexpected return from resume"),
+        }
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(v) if v == 0.5 => {}
+            _ => panic!("unexpected return from resume"),
+        }
+        match Pin::new(&mut coro).resume() {
+            GeneratorState::Yielded(v) if v == 0.25 => {}
             _ => panic!("unexpected return from resume"),
         }
 

@@ -1,10 +1,10 @@
-declare void @llvm.eh.sjlj.longjmp(i8*)
-declare i32 @llvm.eh.sjlj.setjmp(i8*)
-declare void @llvm.stackrestore(i8*)
-declare i8* @llvm.frameaddress(i32)
-declare i8* @llvm.stacksave()
+declare void @llvm.eh.sjlj.longjmp(i8*) noreturn nounwind
+declare i32 @llvm.eh.sjlj.setjmp(i8*) nounwind
+declare void @llvm.stackrestore(i8*) nounwind
+declare i8* @llvm.frameaddress(i32) nounwind readnone
+declare i8* @llvm.stacksave() nounwind
+declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
 
-; This function is essentially what __builtin_setjmp() emits in C.
 ; We put it here and mark it as alwaysinline for code-reuse.
 ; This function is internal only.
 define private i32
@@ -68,9 +68,13 @@ nounwind
 {
 
   %buff = alloca [5 x i8*], align 16          ; Allocate setjmp() buffer
+  %casti = bitcast [5 x i8*]* %buff to i8*
+  %Size = getelementptr inbounds [5 x i8*], [5 x i8*]* null, i32 1
+  %SizeI = ptrtoint [5 x i8*]* %Size to i64
+  call void @llvm.lifetime.start(i64 %SizeI, i8* nonnull %casti)
 
   ; Call setjmp(%buff)
-  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
+  %retv = tail call i32 @jump_save([5 x i8*]* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %next, label %done
 
