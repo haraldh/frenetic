@@ -6,6 +6,11 @@ declare i8* @llvm.stacksave() nounwind
 declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
 declare void @llvm.lifetime.end(i64, i8* nocapture) nounwind
 
+@B = dso_local global [5 x i8*]* null, align 4
+@C = dso_local global i8* null, align 4
+@F = dso_local global i8* null, align 4
+@FUNC = dso_local global  void ([5 x i8*]*, i8*, i8*)* null, align 4
+
 ; We put it here and mark it as alwaysinline for code-reuse.
 ; This function is internal only.
 define private i32
@@ -13,14 +18,14 @@ define private i32
 alwaysinline nounwind naked returns_twice
 {
   ; Store the frame address.
-  %frame = tail call i8* @llvm.frameaddress(i32 0)
+  %frame = call i8* @llvm.frameaddress(i32 0)
   %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
-  store i8* %frame, i8** %foff, align 16
+  store i8* %frame, i8** %foff
 
   ; Store the stack address.
-  %stack = tail call i8* @llvm.stacksave()
+  %stack = call i8* @llvm.stacksave()
   %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
-  store i8* %stack, i8** %soff, align 16
+  store i8* %stack, i8** %soff
 
   ; The rest are architecture specific and stored by setjmp().
   %buff = bitcast [5 x i8*]* %ctx to i8*
@@ -64,7 +69,7 @@ done:                                        ; setjmp(%from) returned !0
 ;   2. Set the stack pointer to %addr.
 ;   3. Call %func(%c, %f).
 define dso_local void
-@jump_init(i8* %addr, i8* %c, i8* %f, void (i8**, i8*, i8*)* %func)
+@jump_init(i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
 
@@ -75,14 +80,24 @@ nounwind
   call void @llvm.lifetime.start(i64 %SizeI, i8* nonnull %casti)
 
   ; Call setjmp(%buff)
-  %retv = tail call i32 @jump_save([5 x i8*]* %buff) returns_twice
+  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
+  store [5 x i8*]* %buff, [5 x i8*]** @B
+  store i8* %c, i8** @C
+  store i8* %f, i8** @F
+  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** @FUNC
+
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
-  %cast = bitcast [5 x i8*]* %buff to i8**
-  call void %func(i8** %cast, i8* %c, i8* %f) ; Call %func(%buff, %c, %f)
+
+  %gb = load [5 x i8*]*, [5 x i8*]** @B
+  %gc = load i8*, i8** @C
+  %gf = load i8*, i8** @F
+  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** @FUNC
+
+  call void %gfunc([5 x i8*]* %gb, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
