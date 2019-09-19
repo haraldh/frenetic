@@ -6,10 +6,10 @@ declare i8* @llvm.stacksave() nounwind
 declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
 declare void @llvm.lifetime.end(i64, i8* nocapture) nounwind
 
-@B = dso_local global [5 x i8*]* null, align 4
-@C = dso_local global i8* null, align 4
-@F = dso_local global i8* null, align 4
-@FUNC = dso_local global  void ([5 x i8*]*, i8*, i8*)* null, align 4
+@B = thread_local(initialexec) global [5 x i8*]* null, align 4
+@C = thread_local(initialexec) global i8* null, align 4
+@F = thread_local(initialexec) global i8* null, align 4
+@FUNC = thread_local(initialexec) global  void ([5 x i8*]*, i8*, i8*)* null, align 4
 
 ; We put it here and mark it as alwaysinline for code-reuse.
 ; This function is internal only.
