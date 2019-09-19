@@ -17,28 +17,14 @@ language: rust
 dist: bionic
 
 rust:
-  - 1.36.0
   - stable
-  - beta
-  - nightly
 
 env:
   matrix:
     - ARCH=ppc64le
     - ARCH=arm64v8
     - ARCH=arm32v7
-    - ARCH=amd64
-    - ARCH=i386
     - ARCH=s390x
-
-matrix:
-  fast_finish: true
-  allow_failures:
-    - rust: nightly
-    - env: ARCH=ppc64le
-    - env: ARCH=arm64v8
-    - env: ARCH=arm32v7
-    - env: ARCH=s390x
 
 before_install:
   - docker run -it --rm --privileged npmccallum/qemu-register
