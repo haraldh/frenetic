@@ -4,6 +4,7 @@ declare void @llvm.stackrestore(i8*) nounwind
 declare i8* @llvm.frameaddress(i32) nounwind readnone
 declare i8* @llvm.stacksave() nounwind
 declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
+declare void @llvm.lifetime.end(i64, i8* nocapture) nounwind
 
 ; We put it here and mark it as alwaysinline for code-reuse.
 ; This function is internal only.
@@ -13,12 +14,12 @@ alwaysinline nounwind naked returns_twice
 {
   ; Store the frame address.
   %frame = tail call i8* @llvm.frameaddress(i32 0)
-  %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i64 0
+  %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
   store i8* %frame, i8** %foff, align 16
 
   ; Store the stack address.
   %stack = tail call i8* @llvm.stacksave()
-  %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i64 2
+  %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
   store i8* %stack, i8** %soff, align 16
 
   ; The rest are architecture specific and stored by setjmp().
@@ -85,6 +86,7 @@ next:                                         ; setjmp(%buff) returned 0
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
+  call void @llvm.lifetime.end(i64 %SizeI, i8* nonnull %casti)
   ret void
 }
 
