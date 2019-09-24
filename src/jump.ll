@@ -6,11 +6,6 @@ declare i8* @llvm.stacksave() nounwind
 declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
 declare void @llvm.lifetime.end(i64, i8* nocapture) nounwind
 
-@B = thread_local(initialexec) global [5 x i8*]* null, align 4
-@C = thread_local(initialexec) global i8* null, align 4
-@F = thread_local(initialexec) global i8* null, align 4
-@FUNC = thread_local(initialexec) global  void ([5 x i8*]*, i8*, i8*)* null, align 4
-
 ; We put it here and mark it as alwaysinline for code-reuse.
 ; This function is internal only.
 define private i32
@@ -72,12 +67,10 @@ define dso_local void
 @jump_init(i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
-
-  %buff = alloca [5 x i8*], align 16          ; Allocate setjmp() buffer
+  %buff = alloca [5 x i8*], align 4          ; Allocate setjmp() buffer
   %casti = bitcast [5 x i8*]* %buff to i8*
   %Size = getelementptr inbounds [5 x i8*], [5 x i8*]* null, i32 1
   %SizeI = ptrtoint [5 x i8*]* %Size to i64
-  call void @llvm.lifetime.start(i64 %SizeI, i8* nonnull %casti)
 
   ; Call setjmp(%buff)
   %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
@@ -85,23 +78,24 @@ nounwind
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
-  store [5 x i8*]* %buff, [5 x i8*]** @B
-  store i8* %c, i8** @C
-  store i8* %f, i8** @F
-  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** @FUNC
+  %1 = alloca i8*, align 4
+  %2 = alloca i8*, align 4
+  %3 = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
+
+  store i8* %c, i8** %1
+  store i8* %f, i8** %2
+  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %3
 
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
-  %gb = load [5 x i8*]*, [5 x i8*]** @B
-  %gc = load i8*, i8** @C
-  %gf = load i8*, i8** @F
-  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** @FUNC
+  %gc = load i8*, i8** %1
+  %gf = load i8*, i8** %2
+  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %3
 
-  call void %gfunc([5 x i8*]* %gb, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
+  call void %gfunc([5 x i8*]* %buff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
-  call void @llvm.lifetime.end(i64 %SizeI, i8* nonnull %casti)
   ret void
 }
 
