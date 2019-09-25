@@ -77,6 +77,7 @@ extern "C" {
     fn jump_into(into: *mut [*mut c_void; 5]) -> !;
     fn jump_swap(from: *mut [*mut c_void; 5], into: *mut [*mut c_void; 5]);
     fn jump_init(
+        buff: *mut [*mut c_void; 5],
         stack: *mut u8,
         ctx: *mut c_void,
         fnc: *mut c_void,
@@ -250,9 +251,10 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             // Calculate the aligned top of the stack.
             let top = stack.as_mut_ptr().add(stack.len());
             let top = top.sub(top.align_offset(STACK_ALIGNMENT));
-
+            let mut buff: [*mut c_void; 5] = [null_mut(); 5];
             // Call into the callback on the specified stack.
             jump_init(
+                buff.as_mut_ptr() as _,
                 top,
                 &mut cor as *mut _ as _,
                 fnc.as_mut_ptr() as *mut _ as _,

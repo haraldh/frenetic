@@ -62,11 +62,9 @@ done:                                        ; setjmp(%from) returned !0
 ;   2. Set the stack pointer to %addr.
 ;   3. Call %func(%c, %f).
 define dso_local void
-@jump_init(i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
+@jump_init([5 x i8*]* %buff, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
-  %buff = alloca [5 x i8*], align 4          ; Allocate setjmp() buffer
-
   ; Call setjmp(%buff)
   %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
@@ -79,18 +77,21 @@ next:                                         ; setjmp(%buff) returned 0
   %1 = alloca i8*, align 4
   %2 = alloca i8*, align 4
   %3 = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
+  %4 = alloca [5 x i8*]*, align 4
 
   store i8* %c, i8** %1
   store i8* %f, i8** %2
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %3
+  store [5 x i8*]* %buff, [5 x i8*]** %4
 
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
   %gc = load i8*, i8** %1
   %gf = load i8*, i8** %2
   %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %3
+  %gbuff = load [5 x i8*]*, [5 x i8*]** %4
 
-  call void %gfunc([5 x i8*]* %buff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
+  call void %gfunc([5 x i8*]* %gbuff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
