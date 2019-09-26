@@ -73,22 +73,25 @@ nounwind
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
-  %1 = alloca i8*, align 4
-  %2 = alloca i8*, align 4
-  %3 = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
-  %4 = alloca [5 x i8*]*, align 4
+  %tc = alloca i8*, align 4
+  %tf = alloca i8*, align 4
+  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
+  %tbuff = alloca [5 x i8*]*, align 4
 
-  store i8* %c, i8** %1
-  store i8* %f, i8** %2
-  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %3
-  store [5 x i8*]* %buff, [5 x i8*]** %4
+  %casti = bitcast [5 x i8*]** %tbuff to i8*
 
+  store i8* %c, i8** %tc
+  store i8* %f, i8** %tf
+  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
+  store [5 x i8*]* %buff, [5 x i8*]** %tbuff
+
+  call void @llvm.lifetime.end(i64 4096, i8* nonnull %casti)
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
-  %gc = load i8*, i8** %1
-  %gf = load i8*, i8** %2
-  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %3
-  %gbuff = load [5 x i8*]*, [5 x i8*]** %4
+  %gc = load i8*, i8** %tc
+  %gf = load i8*, i8** %tf
+  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
+  %gbuff = load [5 x i8*]*, [5 x i8*]** %tbuff
 
   call void %gfunc([5 x i8*]* %gbuff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
