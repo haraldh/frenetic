@@ -385,14 +385,7 @@ impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
 
 #[cfg(test)]
 mod tests {
-    use static_assertions::assert_not_impl_all;
-
     use super::*;
-
-    #[test]
-    fn not_sync_send() {
-        assert_not_impl_all!(test_coro; Coroutine<'_, i32, &str>, Send, Sync);
-    }
 
     #[test]
     fn stack() {
