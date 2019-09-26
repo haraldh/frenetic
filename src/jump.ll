@@ -67,25 +67,25 @@ define dso_local void
 @jump_init([5 x i8*]* %buff, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
+  %tc = alloca i8*, align 8
+  %tf = alloca i8*, align 8
+  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 8
+  %tbuff = alloca [5 x i8*]*, align 8
+
   ; Call setjmp(%buff)
   %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
-  %tc = alloca i8*, align 4
-  %tf = alloca i8*, align 4
-  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
-  %tbuff = alloca [5 x i8*]*, align 4
-
-  %casti = bitcast [5 x i8*]** %tbuff to i8*
+  %1 = bitcast [5 x i8*]** %tbuff to i8*
 
   store i8* %c, i8** %tc
   store i8* %f, i8** %tf
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
   store [5 x i8*]* %buff, [5 x i8*]** %tbuff
 
-  call void @llvm.lifetime.end(i64 4096, i8* nonnull %casti)
+  call void @llvm.lifetime.end(i64 800000, i8* nonnull %1)
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
   %gc = load i8*, i8** %tc
