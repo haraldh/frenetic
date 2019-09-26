@@ -24,7 +24,6 @@ env:
     - ARCH=ppc64le
     - ARCH=arm64v8
     - ARCH=arm32v7
-    - ARCH=s390x
 
 before_install:
   - docker run -it --rm --privileged npmccallum/qemu-register
