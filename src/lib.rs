@@ -255,7 +255,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 let top = stack.as_mut_ptr();
                 top.add(top.align_offset(STACK_ALIGNMENT))
             } else {
-                let top = stack.as_mut_ptr().add(stack.len());
+                let top = stack.as_mut_ptr().add(stack.len() - 1);
                 if top.align_offset(STACK_ALIGNMENT) != 0 {
                     let top = top.sub(STACK_ALIGNMENT);
                     top.add(top.align_offset(STACK_ALIGNMENT))

@@ -67,10 +67,11 @@ define dso_local void
 @jump_init([5 x i8*]* %buff, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
-  %tc = alloca i8*, align 8
-  %tf = alloca i8*, align 8
-  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 8
-  %tbuff = alloca [5 x i8*]*, align 8
+  %tc = alloca i8*
+  %tf = alloca i8*
+  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*
+  %tbuff = alloca [5 x i8*]*
+
   store i8* %c, i8** %tc
   store i8* %f, i8** %tf
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
@@ -87,10 +88,10 @@ next:                                         ; setjmp(%buff) returned 0
   %3 = bitcast i8** %tf to i8*
   %4 = bitcast i8** %tc to i8*
 
-  %gc = load i8*, i8** %tc
-  %gf = load i8*, i8** %tf
-  %gfunc = load void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
-  %gbuff = load [5 x i8*]*, [5 x i8*]** %tbuff
+  %gc = load volatile i8*, i8** %tc
+  %gf = load volatile i8*, i8** %tf
+  %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
+  %gbuff = load volatile [5 x i8*]*, [5 x i8*]** %tbuff
 
   call void @llvm.lifetime.end(i64 800000, i8* nonnull %1)
   call void @llvm.lifetime.end(i64 800000, i8* nonnull %2)
