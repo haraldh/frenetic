@@ -6,28 +6,6 @@ declare i8* @llvm.stacksave() nounwind
 declare void @llvm.lifetime.start(i64, i8* nocapture) nounwind
 declare void @llvm.lifetime.end(i64, i8* nocapture) nounwind
 
-; We put it here and mark it as alwaysinline for code-reuse.
-; This function is internal only.
-define private i32
-@jump_save([5 x i8*]* nonnull %ctx)
-alwaysinline nounwind naked returns_twice
-{
-  ; Store the frame address.
-  %frame = call i8* @llvm.frameaddress(i32 0)
-  %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
-  store i8* %frame, i8** %foff
-
-  ; Store the stack address.
-  %stack = call i8* @llvm.stacksave()
-  %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
-  store i8* %stack, i8** %soff
-
-  ; The rest are architecture specific and stored by setjmp().
-  %buff = bitcast [5 x i8*]* %ctx to i8*
-  %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
-  ret i32 %retv
-}
-
 ; This function is essentially what __builtin_longjmp() emits in C.
 ; The purpose is to expose this intrinsic to Rust (without requiring nightly).
 define dso_local void
@@ -42,11 +20,23 @@ noreturn nounwind naked
 ; This function performs a bidirectional context switch.
 ; It simply calls setjmp(%from) and then longjmp(%into).
 define dso_local void
-@jump_swap([5 x i8*]* nonnull %from, [5 x i8*]* nonnull %into)
+@jump_swap([5 x i8*]* nonnull %ctx, [5 x i8*]* nonnull %into)
 nounwind
 {
   ; setjmp(%from)
-  %retv = call i32 @jump_save([5 x i8*]* %from) returns_twice
+    ; Store the frame address.
+    %frame = call i8* @llvm.frameaddress(i32 0)
+    %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
+    store i8* %frame, i8** %foff
+
+    ; Store the stack address.
+    %stack = call i8* @llvm.stacksave()
+    %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
+    store i8* %stack, i8** %soff
+
+    ; The rest are architecture specific and stored by setjmp().
+    %buff = bitcast [5 x i8*]* %ctx to i8*
+    %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %jump, label %done
 
@@ -64,44 +54,49 @@ done:                                        ; setjmp(%from) returned !0
 ;   2. Set the stack pointer to %addr.
 ;   3. Call %func(%c, %f).
 define dso_local void
-@jump_init([5 x i8*]* %buff, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
+@jump_init([5 x i8*]* %ctx, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
-    ; Call setjmp(%buff)
-  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
-  %zero = icmp eq i32 %retv, 0
-  br i1 %zero, label %next, label %done
-
-next:                                         ; setjmp(%buff) returned 0
-  %tc = alloca i8*
-  %tf = alloca i8*
-  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*
-  %tbuff = alloca [5 x i8*]*
+  %tc = alloca i8*, align 4
+  %tf = alloca i8*, align 4
+  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
+  %tctx = alloca [5 x i8*]*, align 4
 
   store i8* %c, i8** %tc
   store i8* %f, i8** %tf
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
-  store [5 x i8*]* %buff, [5 x i8*]** %tbuff
+  store [5 x i8*]* %ctx, [5 x i8*]** %tctx
 
-  %gc = load volatile i8*, i8** %tc
-  %gf = load volatile i8*, i8** %tf
-  %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
-  %gbuff = load volatile [5 x i8*]*, [5 x i8*]** %tbuff
+    ; Call setjmp(%buff)
+  ; Store the frame address.
+  %frame = call i8* @llvm.frameaddress(i32 0)
+  %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
+  store i8* %frame, i8** %foff
 
+  ; Store the stack address.
+  %stack = call i8* @llvm.stacksave()
+  %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
+  store i8* %stack, i8** %soff
+
+  ; The rest are architecture specific and stored by setjmp().
+  %buff = bitcast [5 x i8*]* %ctx to i8*
+  %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
+
+  %zero = icmp eq i32 %retv, 0
+  br i1 %zero, label %next, label %done
+
+next:                                         ; setjmp(%buff) returned 0
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
-  call void %gfunc([5 x i8*]* %gbuff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
+  %gc = load volatile i8*, i8** %tc
+  %gf = load volatile  i8*, i8** %tf
+  %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
+  %gctx = load volatile [5 x i8*]*, [5 x i8*]** %tctx
+
+  call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
 done:                                         ; setjmp(%buff) returned !0
   ret void
 }
 
-define dso_local zeroext i1 @stk_grows_up(i8*) noinline nounwind {
-  %2 = alloca i8*, align 8
-  store i8* %0, i8** %2, align 8
-  %3 = load i8*, i8** %2, align 8
-  %4 = bitcast i8** %2 to i8*
-  %5 = icmp ult i8* %3, %4
-  ret i1 %5
-}

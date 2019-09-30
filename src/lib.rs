@@ -87,7 +87,6 @@ extern "C" {
             fncpp: *mut c_void,
         ) -> !,
     );
-    fn stk_grows_up(c: *mut c_void) -> bool;
 }
 
 #[repr(C, align(16))]
@@ -245,16 +244,12 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
         // variables.
         let mut cor = Coroutine(None);
         let mut fnc = MaybeUninit::<&mut F>::uninit();
-        let mut test_ptr = true;
 
         assert!(stack.len() >= STACK_MINIMUM);
 
         unsafe {
             // Calculate the aligned top of the stack.
-            let top = if stk_grows_up(&mut test_ptr as *mut _ as _) {
-                let top = stack.as_mut_ptr();
-                top.add(top.align_offset(STACK_ALIGNMENT))
-            } else {
+            let top = {
                 let top = stack.as_mut_ptr().add(stack.len() - 1);
                 if top.align_offset(STACK_ALIGNMENT) != 0 {
                     let top = top.sub(STACK_ALIGNMENT);
@@ -389,7 +384,7 @@ mod tests {
 
     #[test]
     fn stack() {
-        let mut stack = [1u8; STACK_MINIMUM];
+        let mut stack = [1u8; STACK_MINIMUM * 4];
 
         let mut coro = Coroutine::new(&mut stack, |c| {
             let c = c.r#yield(1)?;
@@ -398,39 +393,6 @@ mod tests {
 
         match Pin::new(&mut coro).resume() {
             GeneratorState::Yielded(1) => {}
-            _ => panic!("unexpected return from resume"),
-        }
-
-        match Pin::new(&mut coro).resume() {
-            GeneratorState::Complete("foo") => {}
-            _ => panic!("unexpected return from resume"),
-        }
-    }
-
-    #[test]
-    fn stackfp() {
-        let mut stack = [1u8; STACK_MINIMUM];
-
-        let mut coro = Coroutine::new(&mut stack, |c| {
-            let mut f = 1.0;
-            let c = c.r#yield(f)?;
-            f = f / 2.0;
-            let c = c.r#yield(f)?;
-            f = f / 2.0;
-            let c = c.r#yield(f)?;
-            c.done("foo")
-        });
-
-        match Pin::new(&mut coro).resume() {
-            GeneratorState::Yielded(v) if v == 1.0 => {}
-            _ => panic!("unexpected return from resume"),
-        }
-        match Pin::new(&mut coro).resume() {
-            GeneratorState::Yielded(v) if v == 0.5 => {}
-            _ => panic!("unexpected return from resume"),
-        }
-        match Pin::new(&mut coro).resume() {
-            GeneratorState::Yielded(v) if v == 0.25 => {}
             _ => panic!("unexpected return from resume"),
         }
 
