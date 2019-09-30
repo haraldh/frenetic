@@ -83,20 +83,11 @@ nounwind
   br i1 %zero, label %next, label %done
 
 next:                                         ; setjmp(%buff) returned 0
-  %1 = bitcast [5 x i8*]** %tbuff to i8*
-  %2 = bitcast void ([5 x i8*]*, i8*, i8*)** %tfunc to i8*
-  %3 = bitcast i8** %tf to i8*
-  %4 = bitcast i8** %tc to i8*
-
   %gc = load volatile i8*, i8** %tc
   %gf = load volatile i8*, i8** %tf
   %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
   %gbuff = load volatile [5 x i8*]*, [5 x i8*]** %tbuff
 
-  call void @llvm.lifetime.end(i64 800000, i8* nonnull %1)
-  call void @llvm.lifetime.end(i64 800000, i8* nonnull %2)
-  call void @llvm.lifetime.end(i64 800000, i8* nonnull %3)
-  call void @llvm.lifetime.end(i64 800000, i8* nonnull %4)
   call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
 
   call void %gfunc([5 x i8*]* %gbuff, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
