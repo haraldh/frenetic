@@ -67,6 +67,12 @@ define dso_local void
 @jump_init([5 x i8*]* %buff, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
 nounwind
 {
+    ; Call setjmp(%buff)
+  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
+  %zero = icmp eq i32 %retv, 0
+  br i1 %zero, label %next, label %done
+
+next:                                         ; setjmp(%buff) returned 0
   %tc = alloca i8*
   %tf = alloca i8*
   %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*
@@ -77,12 +83,6 @@ nounwind
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
   store [5 x i8*]* %buff, [5 x i8*]** %tbuff
 
-    ; Call setjmp(%buff)
-  %retv = call i32 @jump_save([5 x i8*]* %buff) returns_twice
-  %zero = icmp eq i32 %retv, 0
-  br i1 %zero, label %next, label %done
-
-next:                                         ; setjmp(%buff) returned 0
   %gc = load volatile i8*, i8** %tc
   %gf = load volatile i8*, i8** %tf
   %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
