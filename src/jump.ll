@@ -48,7 +48,7 @@ jump:                    ; setjmp(%from) returned 0
   %ginto = load volatile [5 x i8*]*, [5 x i8*]** %tinto
   %iinto = bitcast [5 x i8*]* %ginto to i8*
 
-  call void @llvm.eh.sjlj.longjmp(i8* %iinto) ; longjmp(%into)
+  call void @llvm.eh.sjlj.longjmp(i8* %iinto) noreturn; longjmp(%into)
   unreachable
 
 done:                    ; setjmp(%from) returned !0
@@ -99,7 +99,7 @@ next:                     ; setjmp(%buff) returned 0
   %gctx = load volatile [5 x i8*]*, [5 x i8*]** %tctx
 
   call void @llvm.stackrestore(i8* %addr)   ; Move onto new stack %addr
-  call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
+  call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) noreturn; Call %func(%buff, %c, %f)
   unreachable
 
 done:                     ; setjmp(%buff) returned !0

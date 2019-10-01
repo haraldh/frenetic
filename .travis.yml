@@ -43,8 +43,7 @@ install:
 
     VOLUME /tmp/build
     WORKDIR /tmp/build
-    CMD \$X/cargo build --verbose && \$X/cargo test --verbose && \$X/cargo fmt -- --check
-  - rustup component add rustfmt
+    CMD \$X/cargo run --example example
 
 script:
   - cargo fmt -- --check
