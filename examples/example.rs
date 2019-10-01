@@ -4,10 +4,10 @@ use frenetic::{Coroutine, Generator, GeneratorState, STACK_MINIMUM};
 
 fn main() {
     // You'll need to create a stack before using Frenetic coroutines.
-    let mut stack = [0u8; STACK_MINIMUM * 8];
+    let mut stack = Box::new([0xAFu8; 8 * STACK_MINIMUM]);
 
     // Then, you can initialize with `Coroutine::new`.
-    let mut coro = Coroutine::new(&mut stack, |c| {
+    let mut coro = Coroutine::new(stack.as_mut(), |c| {
         let c = c.r#yield(1)?; // Yield an integer value.
         c.done("foo") // Return a string value.
     });
