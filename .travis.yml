@@ -39,12 +39,12 @@ install:
     RUN apt-get install -y wget clang build-essential
     RUN apt-get install -y gcc-multilib || true
     RUN wget -qO- https://sh.rustup.rs | sh -s -- -y --default-toolchain $TRAVIS_RUST_VERSION
-    RUN \$X/rustup component add rustfmt || ln -sf /bin/true \$X/cargo-fmt
+    RUN rm -fr /root/.cargo/registry/*
 
     VOLUME /tmp/build
     WORKDIR /tmp/build
-    CMD \$X/cargo run --example example
+    CMD \$X/cargo update; \$X/cargo run --example example
+    EOF
 
 script:
-  - cargo fmt -- --check
   - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT
