@@ -23,29 +23,35 @@ define dso_local void
 @jump_swap([5 x i8*]* nonnull %ctx, [5 x i8*]* nonnull %into)
 nounwind
 {
+  %tinto = alloca [5 x i8*]*, align 4
+  store [5 x i8*]* %into, [5 x i8*]** %tinto
+
   ; setjmp(%from)
-    ; Store the frame address.
-    %frame = call i8* @llvm.frameaddress(i32 0)
-    %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
-    store i8* %frame, i8** %foff
+  ; Store the frame address.
+  %frame = call i8* @llvm.frameaddress(i32 0)
+  %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
+  store i8* %frame, i8** %foff
 
-    ; Store the stack address.
-    %stack = call i8* @llvm.stacksave()
-    %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
-    store i8* %stack, i8** %soff
+  ; Store the stack address.
+  %stack = call i8* @llvm.stacksave()
+  %soff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 2
+  store i8* %stack, i8** %soff
 
-    ; The rest are architecture specific and stored by setjmp().
-    %buff = bitcast [5 x i8*]* %ctx to i8*
-    %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
+  ; The rest are architecture specific and stored by setjmp().
+  %buff = bitcast [5 x i8*]* %ctx to i8*
+  %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
+
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %jump, label %done
 
-jump:                                        ; setjmp(%from) returned 0
-  %ibuf = bitcast [5 x i8*]* %into to i8*
-  call void @llvm.eh.sjlj.longjmp(i8* %ibuf) ; longjmp(%into)
+jump:                    ; setjmp(%from) returned 0
+  %ginto = load volatile [5 x i8*]*, [5 x i8*]** %tinto
+  %iinto = bitcast [5 x i8*]* %ginto to i8*
+
+  call void @llvm.eh.sjlj.longjmp(i8* %iinto) ; longjmp(%into)
   unreachable
 
-done:                                        ; setjmp(%from) returned !0
+done:                    ; setjmp(%from) returned !0
   ret void
 }
 
@@ -67,7 +73,7 @@ nounwind
   store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
   store [5 x i8*]* %ctx, [5 x i8*]** %tctx
 
-    ; Call setjmp(%buff)
+  ; Call setjmp(%buff)
   ; Store the frame address.
   %frame = call i8* @llvm.frameaddress(i32 0)
   %foff = getelementptr inbounds [5 x i8*], [5 x i8*]* %ctx, i64 0, i32 0
@@ -85,8 +91,8 @@ nounwind
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %next, label %done
 
-next:                                         ; setjmp(%buff) returned 0
-  call void @llvm.stackrestore(i8* %addr)     ; Move onto new stack %addr
+next:                     ; setjmp(%buff) returned 0
+  call void @llvm.stackrestore(i8* %addr)   ; Move onto new stack %addr
 
   %gc = load volatile i8*, i8** %tc
   %gf = load volatile  i8*, i8** %tf
@@ -96,7 +102,7 @@ next:                                         ; setjmp(%buff) returned 0
   call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 
-done:                                         ; setjmp(%buff) returned !0
+done:                     ; setjmp(%buff) returned !0
   ret void
 }
 

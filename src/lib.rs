@@ -69,6 +69,7 @@ use core::mem::MaybeUninit;
 pub use core::ops::{Generator, GeneratorState};
 use core::pin::Pin;
 use core::ptr;
+use std::fmt::Debug;
 
 const STACK_ALIGNMENT: usize = 16;
 pub const STACK_MINIMUM: usize = 4096;
@@ -94,6 +95,13 @@ struct Context<Y, R> {
     parent: [*mut c_void; 5],
     child: [*mut c_void; 5],
     arg: MaybeUninit<*mut GeneratorState<Y, R>>,
+}
+
+impl<Y, R> Debug for Context<Y, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "parent: {:#?} , child {:#?}", self.parent, self.child)?;
+        Ok(())
+    }
 }
 
 impl<Y, R> Default for Context<Y, R> {
@@ -176,6 +184,17 @@ pub struct Finished<R>(R);
 pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
+
+impl<Y, R> Debug for Coroutine<'_, Y, R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(ctx) = self.0.as_ref() {
+            writeln!(f, "{:#?}", ctx)?;
+        } else {
+            writeln!(f, "None")?;
+        }
+        Ok(())
+    }
+}
 
 unsafe extern "C" fn callback<Y, R, F>(
     p: *mut [*mut c_void; 5],
@@ -269,6 +288,9 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 fnc.as_mut_ptr() as *mut _ as _,
                 callback::<Y, R, F>,
             );
+            eprintln!("{:?}", cor);
+            eprintln!("{:?}", buff);
+
             let fnc = fnc.assume_init();
             // Move the closure onto the coroutine's stack.
             *fnc = func;
@@ -406,7 +428,7 @@ mod tests {
     fn heap() {
         let mut stack = Box::new([1u8; STACK_MINIMUM]);
 
-        let mut coro = Coroutine::new(&mut *stack, |c| {
+        let mut coro = Coroutine::new(stack.as_mut(), |c| {
             let c = c.r#yield(1)?;
             c.done("foo")
         });
@@ -429,7 +451,7 @@ mod tests {
         {
             let mut stack = [1u8; STACK_MINIMUM];
 
-            let mut coro = Coroutine::new(&mut stack, |c| match c.r#yield(1) {
+            let mut coro = Coroutine::new(stack.as_mut(), |c| match c.r#yield(1) {
                 Ok(c) => c.done("foo"),
                 Err(v) => {
                     cancelled = true;
