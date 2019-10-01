@@ -4,7 +4,7 @@ use frenetic::{Coroutine, Generator, GeneratorState, STACK_MINIMUM};
 
 fn main() {
     // You'll need to create a stack before using Frenetic coroutines.
-    let mut stack = Box::new([0xAFu8; 8 * STACK_MINIMUM]);
+    let mut stack = Box::new([0u8; 8 * STACK_MINIMUM]);
 
     // Then, you can initialize with `Coroutine::new`.
     let mut coro = Coroutine::new(stack.as_mut(), |c| {
