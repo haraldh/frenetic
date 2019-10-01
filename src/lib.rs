@@ -281,6 +281,12 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 }
             };
 
+            eprintln!(
+                "Stack {:x} - {:x}",
+                stack.as_mut_ptr() as usize,
+                top as usize
+            );
+
             let mut buff: [*mut c_void; 5] = [ptr::null_mut(); 5];
 
             // Call into the callback on the specified stack.
