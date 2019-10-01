@@ -92,13 +92,13 @@ nounwind
   br i1 %zero, label %next, label %done
 
 next:                     ; setjmp(%buff) returned 0
-  call void @llvm.stackrestore(i8* %addr)   ; Move onto new stack %addr
 
   %gc = load volatile i8*, i8** %tc
   %gf = load volatile  i8*, i8** %tf
   %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
   %gctx = load volatile [5 x i8*]*, [5 x i8*]** %tctx
 
+  call void @llvm.stackrestore(i8* %addr)   ; Move onto new stack %addr
   call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) ; Call %func(%buff, %c, %f)
   unreachable
 

@@ -221,7 +221,10 @@ where
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
+
+    eprintln!("callback: before jump_swap {:#?}", ctx);
     jump_swap(ctx.child.as_mut_ptr() as _, p as _);
+    eprintln!("callback: after jump_swap {:#?}", ctx);
 
     let fnc = fnc.assume_init();
 
@@ -288,8 +291,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 fnc.as_mut_ptr() as *mut _ as _,
                 callback::<Y, R, F>,
             );
-            eprintln!("{:?}", cor);
-            eprintln!("{:?}", buff);
+            eprintln!("after jump_init {:?}", cor);
 
             let fnc = fnc.assume_init();
             // Move the closure onto the coroutine's stack.
@@ -325,11 +327,13 @@ impl<'a, Y, R> Control<'a, Y, R> {
             // `Generator::resume()`.
             *ptr_arg = GeneratorState::Yielded(arg);
 
+            eprintln!("yield: before jump_swap {:#?}", self.0);
             // Save our current position and yield control to the parent.
             jump_swap(
                 self.0.child.as_mut_ptr() as _,
                 self.0.parent.as_mut_ptr() as _,
             );
+            eprintln!("yield: after jump_swap {:#?}", self.0);
 
             // Let the compiler re-read *self.0.arg
             let ptr_arg = self.0.arg.as_mut_ptr().read_volatile();
@@ -367,8 +371,10 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
                 // Pass the pointer so that the child can move the argument out.
                 p.arg.as_mut_ptr().write_volatile(arg.as_mut_ptr());
 
+                eprintln!("resume: before jump_swap {:#?}", p);
                 // Jump back into the child.
                 jump_swap(p.parent.as_mut_ptr() as _, p.child.as_mut_ptr() as _);
+                eprintln!("resume: after jump_swap {:#?}", p);
 
                 // Clear the pointer as the value is about to become invalid.
                 p.arg.as_mut_ptr().write_volatile(ptr::null_mut());
