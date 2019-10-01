@@ -44,7 +44,6 @@ install:
     VOLUME /tmp/build
     WORKDIR /tmp/build
     CMD \$X/cargo update; \$X/cargo run --example example
-    EOF
 
 script:
   - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT
