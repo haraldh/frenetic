@@ -99,7 +99,11 @@ struct Context<Y, R> {
 
 impl<Y, R> Debug for Context<Y, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "parent: {:#?} , child {:#?}", self.parent, self.child)?;
+        writeln!(
+            f,
+            "{:x}: parent: {:#?} , child {:#?}",
+            self as *const _ as usize, self.parent, self.child
+        )?;
         Ok(())
     }
 }
