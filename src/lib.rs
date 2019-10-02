@@ -183,7 +183,7 @@ pub struct Finished<R>(R);
 
 pub struct Canceled(());
 
-pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>);
+pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>, &'a mut [u8]);
 
 impl<Y, R> Debug for Coroutine<'_, Y, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -259,20 +259,20 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     where
         F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
     {
+        assert!(stack.len() >= STACK_MINIMUM);
+
         // These variables are going to receive output from the callback
         // function above. Specifically, the callback function is going to
         // allocate space for a Context and our closure on the new stack. Then,
         // it is going to store references to those instances inside these
         // variables.
-        let mut cor = Coroutine(None);
+        let mut cor = Coroutine(None, stack);
         let mut fnc = MaybeUninit::<&mut F>::uninit();
-
-        assert!(stack.len() >= STACK_MINIMUM);
 
         unsafe {
             // Calculate the aligned top of the stack.
             let top = {
-                let top = stack.as_mut_ptr().add(stack.len() - 1);
+                let top = cor.1.as_mut_ptr().add(cor.1.len() - 1);
                 if top.align_offset(STACK_ALIGNMENT) != 0 {
                     let top = top.sub(STACK_ALIGNMENT);
                     top.add(top.align_offset(STACK_ALIGNMENT))
@@ -283,7 +283,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
 
             eprintln!(
                 "Stack {:x} - {:x}",
-                stack.as_mut_ptr() as usize,
+                cor.1.as_mut_ptr() as usize,
                 top as usize
             );
 
