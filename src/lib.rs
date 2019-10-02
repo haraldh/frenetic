@@ -26,7 +26,7 @@
 //! let mut stack = [0u8; STACK_MINIMUM * 8];
 //!
 //! // Then, you can initialize with `Coroutine::new`.
-//! let mut coro = Coroutine::new(&mut stack, |c| {
+//! let mut coro = Coroutine::new(stack.as_mut(), |c| {
 //!     let c = c.r#yield(1)?; // Yield an integer value.
 //!     c.done("foo") // Return a string value.
 //! });
@@ -420,7 +420,7 @@ mod tests {
     fn stack() {
         let mut stack = [1u8; STACK_MINIMUM * 4];
 
-        let mut coro = Coroutine::new(&mut stack, |c| {
+        let mut coro = Coroutine::new(stack.as_mut(), |c| {
             let c = c.r#yield(1)?;
             c.done("foo")
         });
@@ -486,7 +486,7 @@ mod tests {
     fn coro_early_drop_yield_done() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(&mut stack, |c| {
+        let _coro = Coroutine::new(stack.as_mut(), |c| {
             let c = c.r#yield(1)?;
             c.done("foo")
         });
@@ -496,27 +496,33 @@ mod tests {
     fn coro_early_drop_done_only() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(&mut stack, |c: Control<'_, i32, &str>| c.done("foo"));
+        let _coro = Coroutine::new(stack.as_mut(), |c: Control<'_, i32, &str>| c.done("foo"));
     }
 
     #[test]
     fn coro_early_drop_result_ok() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Ok(Finished("foo")));
+        let _coro = Coroutine::new(stack.as_mut(), |_c: Control<'_, i32, &str>| {
+            Ok(Finished("foo"))
+        });
     }
 
     #[test]
     fn coro_early_drop_result_err() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Err(Canceled(())));
+        let _coro = Coroutine::new(stack.as_mut(), |_c: Control<'_, i32, &str>| {
+            Err(Canceled(()))
+        });
     }
 
     #[test]
     #[should_panic(expected = "stack.len() >= STACK_MINIMUM")]
     fn small_stack() {
         let mut stack = [1u8; STACK_MINIMUM - 1];
-        let _coro = Coroutine::new(&mut stack, |_c: Control<'_, i32, &str>| Err(Canceled(())));
+        let _coro = Coroutine::new(stack.as_mut(), |_c: Control<'_, i32, &str>| {
+            Err(Canceled(()))
+        });
     }
 }
