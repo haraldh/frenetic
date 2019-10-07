@@ -237,7 +237,7 @@ where
     if let Ok(r) = fnc(Control(&mut ctx)) {
         let arg_ptr = ctx.arg.as_mut_ptr().read_volatile();
         if !arg_ptr.is_null() {
-            arg_ptr.write(GeneratorState::Complete(r.0));
+            arg_ptr.write_volatile(GeneratorState::Complete(r.0));
         }
     }
 
@@ -304,7 +304,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             eprintln!("after jump_init {:?}", cor);
 
             // Move the closure onto the coroutine's stack.
-            fnc.as_mut_ptr().read_volatile().write(func);
+            fnc.as_mut_ptr().read_volatile().write_volatile(func);
         }
 
         cor
@@ -334,7 +334,7 @@ impl<'a, Y, R> Control<'a, Y, R> {
 
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
-            ptr_arg.write(GeneratorState::Yielded(arg));
+            ptr_arg.write_volatile(GeneratorState::Yielded(arg));
 
             eprintln!("yield: before jump_swap {:#?}", self.0);
             // Save our current position and yield control to the parent.
