@@ -230,13 +230,14 @@ where
     jump_swap(ctx.child.as_mut_ptr() as _, p as _);
     eprintln!("callback: after jump_swap {:#?}", ctx);
 
-    let fnc = fnc.assume_init();
+    let fnc = fnc.as_mut_ptr().read_volatile();
 
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
     if let Ok(r) = fnc(Control(&mut ctx)) {
-        if !((*ctx.arg.as_mut_ptr()).is_null()) {
-            (*(ctx.arg.as_mut_ptr())).write(GeneratorState::Complete(r.0));
+        let arg_ptr = ctx.arg.as_mut_ptr().read_volatile();
+        if !arg_ptr.is_null() {
+            arg_ptr.write(GeneratorState::Complete(r.0));
         }
     }
 
@@ -270,7 +271,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
         // it is going to store references to those instances inside these
         // variables.
         let mut cor = Coroutine(None, stack);
-        let mut fnc = MaybeUninit::<&mut F>::uninit();
+        let mut fnc = MaybeUninit::<*mut F>::uninit();
 
         unsafe {
             // Calculate the aligned top of the stack.
@@ -303,7 +304,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             eprintln!("after jump_init {:?}", cor);
 
             // Move the closure onto the coroutine's stack.
-            **fnc.as_mut_ptr() = func;
+            fnc.as_mut_ptr().read_volatile().write(func);
         }
 
         cor
@@ -323,17 +324,17 @@ impl<'a, Y, R> Control<'a, Y, R> {
     /// exists.
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
-            let ptr_arg = self.0.arg.as_mut_ptr();
+            let ptr_arg = self.0.arg.as_mut_ptr().read_volatile();
 
             // The parent `Coroutine` object has been dropped. Resume the child
             // coroutine with the Canceled error. It must clean up and exit.
-            if (*ptr_arg).is_null() {
+            if ptr_arg.is_null() {
                 return Err(Canceled(()));
             }
 
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
-            (*ptr_arg).write(GeneratorState::Yielded(arg));
+            ptr_arg.write(GeneratorState::Yielded(arg));
 
             eprintln!("yield: before jump_swap {:#?}", self.0);
             // Save our current position and yield control to the parent.
