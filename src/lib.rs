@@ -235,9 +235,8 @@ where
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
     if let Ok(r) = fnc(Control(&mut ctx)) {
-        let arg = ctx.arg.assume_init();
-        if !arg.is_null() {
-            *arg = GeneratorState::Complete(r.0);
+        if !((*ctx.arg.as_mut_ptr()).is_null()) {
+            (*(ctx.arg.as_mut_ptr())).write(GeneratorState::Complete(r.0));
         }
     }
 
@@ -303,9 +302,8 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
             );
             eprintln!("after jump_init {:?}", cor);
 
-            let fnc = fnc.assume_init();
             // Move the closure onto the coroutine's stack.
-            *fnc = func;
+            **fnc.as_mut_ptr() = func;
         }
 
         cor
@@ -325,17 +323,17 @@ impl<'a, Y, R> Control<'a, Y, R> {
     /// exists.
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
         unsafe {
-            let ptr_arg = self.0.arg.assume_init();
+            let ptr_arg = self.0.arg.as_mut_ptr();
 
             // The parent `Coroutine` object has been dropped. Resume the child
             // coroutine with the Canceled error. It must clean up and exit.
-            if ptr_arg.is_null() {
+            if (*ptr_arg).is_null() {
                 return Err(Canceled(()));
             }
 
             // Move the argument value into the argument variable in
             // `Generator::resume()`.
-            *ptr_arg = GeneratorState::Yielded(arg);
+            (*ptr_arg).write(GeneratorState::Yielded(arg));
 
             eprintln!("yield: before jump_swap {:#?}", self.0);
             // Save our current position and yield control to the parent.
