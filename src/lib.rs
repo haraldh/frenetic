@@ -226,9 +226,9 @@ where
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
 
-    eprintln!("callback(): before jump_swap {:#?}\np: {:#?}\n", ctx, *p);
+    //eprintln!("callback(): before jump_swap {:#?}\np: {:#?}\n", ctx, *p);
     jump_swap(ctx.child.as_mut_ptr() as _, p as _);
-    eprintln!("callback(): after jump_swap {:#?}\np: {:#?}\n", ctx, *p);
+    //eprintln!("callback(): after jump_swap {:#?}\np: {:#?}\n", ctx, *p);
 
     let fnc = fnc.as_mut_ptr().read_volatile();
 
@@ -301,7 +301,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 fnc.as_mut_ptr() as *mut _ as _,
                 callback::<Y, R, F>,
             );
-            eprintln!("new(): after jump_init {:?}\n", cor);
+            //eprintln!("new(): after jump_init {:?}\n", cor);
 
             // Move the closure onto the coroutine's stack.
             fnc.as_mut_ptr().read_volatile().write_volatile(func);
@@ -336,13 +336,13 @@ impl<'a, Y, R> Control<'a, Y, R> {
             // `Generator::resume()`.
             ptr_arg.write_volatile(GeneratorState::Yielded(arg));
 
-            eprintln!("yield(): before jump_swap {:#?}\n", self.0);
+            //eprintln!("yield(): before jump_swap {:#?}\n", self.0);
             // Save our current position and yield control to the parent.
             jump_swap(
                 self.0.child.as_mut_ptr() as _,
                 self.0.parent.as_mut_ptr() as _,
             );
-            eprintln!("yield(): after jump_swap {:#?}\n", self.0);
+            //eprintln!("yield(): after jump_swap {:#?}\n", self.0);
 
             // The parent `Coroutine` object has been dropped. Resume the child
             // coroutine with the Canceled error. It must clean up and exit.
@@ -378,10 +378,10 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
                 // Pass the pointer so that the child can move the argument out.
                 p.arg.as_mut_ptr().write_volatile(arg.as_mut_ptr());
 
-                eprintln!("resume(): before jump_swap {:#?}\n", p);
+                //eprintln!("resume(): before jump_swap {:#?}\n", p);
                 // Jump back into the child.
                 jump_swap(p.parent.as_mut_ptr() as _, p.child.as_mut_ptr() as _);
-                eprintln!("resume(): after jump_swap {:#?}\n", p);
+                //eprintln!("resume(): after jump_swap {:#?}\n", p);
 
                 // Clear the pointer as the value is about to become invalid.
                 p.arg.as_mut_ptr().write_volatile(ptr::null_mut());
