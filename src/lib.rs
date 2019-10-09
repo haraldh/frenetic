@@ -88,6 +88,7 @@ extern "C" {
             fncpp: *mut c_void,
         ) -> !,
     );
+    fn stk_grows_up(c: *mut c_void) -> bool;
 }
 
 #[repr(C, align(16))]
@@ -272,10 +273,14 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
         // variables.
         let mut cor = Coroutine(None, stack);
         let mut fnc = MaybeUninit::<*mut F>::uninit();
+        let mut test_ptr = MaybeUninit::<bool>::uninit();
 
         unsafe {
             // Calculate the aligned top of the stack.
-            let top = {
+            let top = if stk_grows_up(test_ptr.as_mut_ptr() as _) {
+                let top = cor.1.as_mut_ptr();
+                top.add(top.align_offset(STACK_ALIGNMENT))
+            } else {
                 let top = cor.1.as_mut_ptr().add(cor.1.len() - 1);
                 if top.align_offset(STACK_ALIGNMENT) != 0 {
                     let top = top.sub(STACK_ALIGNMENT);
