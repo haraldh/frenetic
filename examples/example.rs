@@ -13,11 +13,11 @@ fn main() {
     });
 
     // You can also interact with the yielded and returned values.
-    match Pin::new(&mut coro).resume() {
+    match Pin::new(coro.as_mut()).resume() {
         GeneratorState::Yielded(1) => {}
         _ => panic!("unexpected return from resume"),
     }
-    match Pin::new(&mut coro).resume() {
+    match Pin::new(coro.as_mut()).resume() {
         GeneratorState::Complete("foo") => {}
         _ => panic!("unexpected return from resume"),
     }

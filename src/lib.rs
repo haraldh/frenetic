@@ -32,11 +32,11 @@
 //! });
 //!
 //! // You can also interact with the yielded and returned values.
-//! match Pin::new(&mut coro).resume() {
+//! match Pin::new(coro.as_mut()).resume() {
 //!     GeneratorState::Yielded(1) => {}
 //!     _ => panic!("unexpected return from resume"),
 //! }
-//! match Pin::new(&mut coro).resume() {
+//! match Pin::new(coro.as_mut()).resume() {
 //!     GeneratorState::Complete("foo") => {}
 //!     _ => panic!("unexpected return from resume"),
 //! }
@@ -95,15 +95,16 @@ extern "C" {
 struct Context<Y, R> {
     parent: [*mut c_void; 5],
     child: [*mut c_void; 5],
-    arg: MaybeUninit<*mut GeneratorState<Y, R>>,
+    arg: Option<Box<GeneratorState<Y, R>>>,
+    canceled: bool,
 }
 
 impl<Y, R> Debug for Context<Y, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:x}: parent: {:#?} , child {:#?}",
-            self as *const _ as usize, self.parent, self.child
+            "{:p}: parent: {:#?} , child {:#?}",
+            self as *const _, self.parent, self.child
         )?;
         Ok(())
     }
@@ -114,7 +115,8 @@ impl<Y, R> Default for Context<Y, R> {
         Context {
             parent: [ptr::null_mut(); 5],
             child: [ptr::null_mut(); 5],
-            arg: MaybeUninit::uninit(),
+            arg: None,
+            canceled: false,
         }
     }
 }
@@ -188,7 +190,7 @@ pub struct Finished<R>(R);
 
 pub struct Canceled(());
 
-pub struct Coroutine<'a, Y, R>(Option<&'a mut Context<Y, R>>, &'a mut [u8]);
+pub struct Coroutine<'a, Y, R>(Option<Pin<Box<Context<Y, R>>>>, &'a mut [u8]);
 
 impl<Y, R> Debug for Coroutine<'_, Y, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -210,40 +212,50 @@ where
     F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     // Allocate a Context and a closure.
-    let mut ctx = Context::<Y, R>::default();
     let mut fnc = MaybeUninit::<F>::uninit();
+
+    eprintln!("callback(): c {:#?}\n", *(c as *const Coroutine<'_, Y, R>));
 
     // Cast the incoming pointers to their correct types.
     // See `Coroutine::new()`.
-    let c = c as *mut Coroutine<'_, Y, R>;
+    let coro = c as *mut Coroutine<'_, Y, R>;
     let f = f as *mut *mut F;
 
     // Pass references to the stack-allocated Context and closure back into
     // Coroutine::new() through the incoming pointers.
-    (*c).0 = Some(&mut ctx);
     *f = fnc.as_mut_ptr();
 
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
 
-    //eprintln!("callback(): before jump_swap {:#?}\np: {:#?}\n", ctx, *p);
-    jump_swap(ctx.child.as_mut_ptr() as _, p as _);
-    //eprintln!("callback(): after jump_swap {:#?}\np: {:#?}\n", ctx, *p);
+    eprintln!(
+        "callback(): before jump_swap {:#?}\np: {:#?}\n",
+        (*coro).0.as_ref(),
+        *p
+    );
+    jump_swap((*coro).0.as_mut().unwrap().child.as_mut_ptr() as _, p as _);
+    eprintln!(
+        "callback(): after jump_swap {:#?}\np: {:#?}\n",
+        (*coro).0.as_ref(),
+        *p
+    );
 
     let fnc = fnc.as_mut_ptr().read_volatile();
 
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
-    if let Ok(r) = fnc(Control(&mut ctx)) {
-        let arg_ptr = ctx.arg.as_mut_ptr().read_volatile();
-        if !arg_ptr.is_null() {
-            arg_ptr.write_volatile(GeneratorState::Complete(r.0));
-        }
+    if let Ok(r) = fnc(Control(&mut (*coro).0.as_mut().unwrap())) {
+        let _ = (*coro)
+            .0
+            .as_mut()
+            .unwrap()
+            .arg
+            .replace(Box::new(GeneratorState::Complete(r.0)));
     }
 
     // We cannot be resumed, so jump away forever.
-    jump_into(ctx.parent.as_mut_ptr() as _);
+    jump_into((*coro).0.as_mut().unwrap().parent.as_mut_ptr() as _);
 }
 
 impl<'a, Y, R> Coroutine<'a, Y, R> {
@@ -260,7 +272,7 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
     /// recommend the stack include a guard page.
     ///
     /// * `func` - The closure to be executed as part of the coroutine.
-    pub fn new<F>(stack: &'a mut [u8], func: F) -> Self
+    pub fn new<F>(stack: &'a mut [u8], func: F) -> Box<Self>
     where
         F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
     {
@@ -271,7 +283,8 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
         // allocate space for a Context and our closure on the new stack. Then,
         // it is going to store references to those instances inside these
         // variables.
-        let mut cor = Coroutine(None, stack);
+        let mut cor = Box::new(Coroutine(Some(Box::pin(Context::<Y, R>::default())), stack));
+
         let mut fnc = MaybeUninit::<*mut F>::uninit();
         let mut test_ptr = MaybeUninit::<bool>::uninit();
 
@@ -290,23 +303,24 @@ impl<'a, Y, R> Coroutine<'a, Y, R> {
                 }
             };
 
-            eprintln!(
-                "Stack {:x} - {:x}\n",
-                cor.1.as_mut_ptr() as usize,
-                top as usize
-            );
+            eprintln!("Stack {:p} - {:p}\n", cor.1.as_mut_ptr(), top);
 
             let mut buff: [*mut c_void; 5] = [ptr::null_mut(); 5];
-
+            eprintln!("new(): before jump_init cor {:#?}\n", &mut cor,);
+            eprintln!(
+                "new(): before jump_init {:#?}\np: {:#?}\n",
+                cor.0.as_ref(),
+                buff.as_mut_ptr()
+            );
             // Call into the callback on the specified stack.
             jump_init(
                 buff.as_mut_ptr() as _,
                 top,
-                &mut cor as *mut _ as _,
+                cor.as_mut() as *mut _ as _,
                 fnc.as_mut_ptr() as *mut _ as _,
                 callback::<Y, R, F>,
             );
-            //eprintln!("new(): after jump_init {:?}\n", cor);
+            eprintln!("new(): after jump_init {:?}\n", cor);
 
             // Move the closure onto the coroutine's stack.
             fnc.as_mut_ptr().read_volatile().write_volatile(func);
@@ -328,33 +342,28 @@ impl<'a, Y, R> Control<'a, Y, R> {
     /// * `arg` - Passed on to the argument variable for the generator, if it
     /// exists.
     pub fn r#yield(self, arg: Y) -> Result<Self, Canceled> {
+        if self.0.canceled {
+            return Err(Canceled(()));
+        }
+
+        self.0.arg = Some(Box::new(GeneratorState::Yielded(arg)));
+
         unsafe {
-            let ptr_arg = self.0.arg.as_mut_ptr().read_volatile();
-
-            // The parent `Coroutine` object has been dropped. Resume the child
-            // coroutine with the Canceled error. It must clean up and exit.
-            if ptr_arg.is_null() {
-                return Err(Canceled(()));
-            }
-
-            // Move the argument value into the argument variable in
-            // `Generator::resume()`.
-            ptr_arg.write_volatile(GeneratorState::Yielded(arg));
-
-            //eprintln!("yield(): before jump_swap {:#?}\n", self.0);
+            eprintln!("yield(): before jump_swap {:#?}\n", self.0);
             // Save our current position and yield control to the parent.
             jump_swap(
                 self.0.child.as_mut_ptr() as _,
                 self.0.parent.as_mut_ptr() as _,
             );
-            //eprintln!("yield(): after jump_swap {:#?}\n", self.0);
+            eprintln!("yield(): after jump_swap {:#?}\n", self.0);
 
-            // The parent `Coroutine` object has been dropped. Resume the child
-            // coroutine with the Canceled error. It must clean up and exit.
-            // Let the compiler re-read *self.0.arg
-            if self.0.arg.as_mut_ptr().read_volatile().is_null() {
+            if (&mut self.0.canceled as *mut bool).read_volatile() {
                 return Err(Canceled(()));
             }
+        }
+
+        if self.0.canceled {
+            return Err(Canceled(()));
         }
 
         Ok(self)
@@ -373,45 +382,37 @@ impl<'a, Y, R> Generator for Coroutine<'a, Y, R> {
     /// Resumes a paused coroutine.
     /// Re-initialize stack and continue execution where it was left off.
     fn resume(mut self: Pin<&mut Self>) -> GeneratorState<Y, R> {
-        // Allocate an argument variable on the stack. See `Control::r#yield()` and
-        // `callback()` for where this is initialized.
-        let mut arg = MaybeUninit::<GeneratorState<Y, R>>::uninit();
-
         match self.0 {
             None => panic!("Called Generator::resume() after completion!"),
             Some(ref mut p) => unsafe {
-                // Pass the pointer so that the child can move the argument out.
-                p.arg.as_mut_ptr().write_volatile(arg.as_mut_ptr());
-
-                //eprintln!("resume(): before jump_swap {:#?}\n", p);
+                p.arg = None;
+                eprintln!("resume(): before jump_swap {:#?}\n", p);
                 // Jump back into the child.
                 jump_swap(p.parent.as_mut_ptr() as _, p.child.as_mut_ptr() as _);
-                //eprintln!("resume(): after jump_swap {:#?}\n", p);
-
-                // Clear the pointer as the value is about to become invalid.
-                p.arg.as_mut_ptr().write_volatile(ptr::null_mut());
+                eprintln!("resume(): after jump_swap {:#?}\n", p);
             },
         }
 
-        let state = unsafe { arg.assume_init() };
+        // Clear the pointer as the value is about to become invalid.
+        let state = self.0.as_mut().unwrap().arg.take().unwrap();
 
         // If the child coroutine has completed, we are done. Make it so that
         // we can never resume the coroutine by clearing the reference.
-        if let GeneratorState::Complete(_) = state {
+        if let GeneratorState::Complete(_) = *state {
             let _old = self.0.take();
         }
 
-        state
+        *state
     }
 }
 
 impl<'a, Y, R> Drop for Coroutine<'a, Y, R> {
     fn drop(&mut self) {
         // If we are still able to resume the coroutine, do so.
-        if let Some(x) = self.0.take() {
+        if let Some(ref mut x) = self.0 {
             unsafe {
                 // set the argument pointer to null, `Control::r#yield()` will return `Canceled`.
-                x.arg.as_mut_ptr().write_volatile(ptr::null_mut());
+                x.canceled = true;
                 jump_swap(x.parent.as_mut_ptr() as _, x.child.as_mut_ptr() as _);
             }
         }
@@ -431,12 +432,12 @@ mod tests {
             c.done("foo")
         });
 
-        match Pin::new(&mut coro).resume() {
+        match Pin::new(coro.as_mut()).resume() {
             GeneratorState::Yielded(1) => {}
             _ => panic!("unexpected return from resume"),
         }
 
-        match Pin::new(&mut coro).resume() {
+        match Pin::new(coro.as_mut()).resume() {
             GeneratorState::Complete("foo") => {}
             _ => panic!("unexpected return from resume"),
         }
@@ -451,12 +452,12 @@ mod tests {
             c.done("foo")
         });
 
-        match Pin::new(&mut coro).resume() {
+        match Pin::new(coro.as_mut()).resume() {
             GeneratorState::Yielded(1) => {}
             _ => panic!("unexpected return from resume"),
         }
 
-        match Pin::new(&mut coro).resume() {
+        match Pin::new(coro.as_mut()).resume() {
             GeneratorState::Complete("foo") => {}
             _ => panic!("unexpected return from resume"),
         }
@@ -477,7 +478,7 @@ mod tests {
                 }
             });
 
-            match Pin::new(&mut coro).resume() {
+            match Pin::new(coro.as_mut()).resume() {
                 GeneratorState::Yielded(1) => {}
                 _ => panic!("unexpected return from resume"),
             }
