@@ -17,7 +17,7 @@ language: rust
 dist: bionic
 
 rust:
-  - stable
+  - 1.36.0
 
 env:
   matrix:
