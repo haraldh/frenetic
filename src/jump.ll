@@ -57,21 +57,17 @@ done:                    ; setjmp(%from) returned !0
 
 ; This function sets up the coroutine. It does the following steps:
 ;   1. Call setjmp().
-;   2. Set the stack pointer to %addr.
+;   2. Set the stack pointer to %stackaddr.
 ;   3. Call %func(%c, %f).
 define dso_local void
-@jump_init([5 x i8*]* %ctx, i8* %addr, i8* %c, i8* %f, void ([5 x i8*]*, i8*, i8*)* %func)
+@jump_init([5 x i8*]* %ctx, i8* %stackaddr, i8* %c, void (i8*)* %func)
 nounwind
 {
   %tc = alloca i8*, align 4
-  %tf = alloca i8*, align 4
-  %tfunc = alloca void ([5 x i8*]*, i8*, i8*)*, align 4
-  %tctx = alloca [5 x i8*]*, align 4
+  %tfunc = alloca void (i8*)*, align 4
 
   store i8* %c, i8** %tc
-  store i8* %f, i8** %tf
-  store void ([5 x i8*]*, i8*, i8*)* %func, void ([5 x i8*]*, i8*, i8*)** %tfunc
-  store [5 x i8*]* %ctx, [5 x i8*]** %tctx
+  store void (i8*)* %func, void (i8*)** %tfunc
 
   ; Call setjmp(%buff)
   ; Store the frame address.
@@ -94,12 +90,10 @@ nounwind
 next:                     ; setjmp(%buff) returned 0
 
   %gc = load volatile i8*, i8** %tc
-  %gf = load volatile  i8*, i8** %tf
-  %gfunc = load volatile void ([5 x i8*]*, i8*, i8*)*, void ([5 x i8*]*, i8*, i8*)** %tfunc
-  %gctx = load volatile [5 x i8*]*, [5 x i8*]** %tctx
+  %gfunc = load volatile void (i8*)*, void (i8*)** %tfunc
 
-  call void @llvm.stackrestore(i8* %addr)   ; Move onto new stack %addr
-  call void %gfunc([5 x i8*]* %gctx, i8* %gc, i8* %gf) noreturn; Call %func(%buff, %c, %f)
+  call void @llvm.stackrestore(i8* %stackaddr)   ; Move onto new stack %stackaddr
+  call void %gfunc(i8* %gc) noreturn; Call %func(%buff, %c, %f)
   unreachable
 
 done:                     ; setjmp(%buff) returned !0
