@@ -22,6 +22,7 @@ rust:
 env:
   matrix:
     - ARCH=ppc64le
+    - ARCH=s390x
     - ARCH=arm64v8
     - ARCH=arm32v7
 
@@ -43,7 +44,7 @@ install:
 
     VOLUME /tmp/build
     WORKDIR /tmp/build
-    CMD \$X/cargo update; \$X/cargo run --example example
+    CMD \$X/cargo update; RUST_BACKTRACE=full \$X/cargo run --example example
 
 script:
   - docker run -it --rm -v `pwd`:/tmp/build $TRAVIS_COMMIT

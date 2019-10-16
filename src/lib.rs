@@ -397,16 +397,16 @@ where
         }
 
         // Clear the pointer as the value is about to become invalid.
-        let state = self.ctx.as_mut().unwrap().arg.take().unwrap();
+        let state = *(self.ctx.as_mut().unwrap().arg.take().unwrap());
 
         // If the child coroutine has completed, we are done. Make it so that
         // we can never resume the coroutine by clearing the reference.
-        if let GeneratorState::Complete(_) = *state {
+        if let GeneratorState::Complete(_) = state {
             self.ctx.as_mut().unwrap().canceled = true;
             let _old = self.ctx.take();
         }
 
-        *state
+        state
     }
 }
 
