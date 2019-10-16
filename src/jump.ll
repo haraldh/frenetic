@@ -39,15 +39,16 @@ nounwind
 
   ; The rest are architecture specific and stored by setjmp().
   %buff = bitcast [5 x i8*]* %ctx to i8*
+
+  %ginto = load volatile [5 x i8*]*, [5 x i8*]** %tinto
+  %iinto = bitcast [5 x i8*]* %ginto to i8*
+
   %retv = call i32 @llvm.eh.sjlj.setjmp(i8* %buff) returns_twice
 
   %zero = icmp eq i32 %retv, 0
   br i1 %zero, label %jump, label %done
 
 jump:                    ; setjmp(%from) returned 0
-  %ginto = load volatile [5 x i8*]*, [5 x i8*]** %tinto
-  %iinto = bitcast [5 x i8*]* %ginto to i8*
-
   call void @llvm.eh.sjlj.longjmp(i8* %iinto) noreturn; longjmp(%into)
   unreachable
 
