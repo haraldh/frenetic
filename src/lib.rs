@@ -80,8 +80,8 @@ extern "C" {
     fn jump_init(
         buff: *mut [*mut c_void; 5],
         stack: *mut u8,
-        ctx: *mut c_void,
-        func: unsafe extern "C" fn(ctxpp: *mut c_void) -> !,
+        coro: *mut c_void,
+        func: unsafe extern "C" fn(coro: *mut c_void) -> !,
     );
     fn stk_grows_up(c: *mut c_void) -> bool;
 }
@@ -187,17 +187,17 @@ pub struct Canceled(());
 
 pub struct Coroutine<'a, Y, R, F>
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     ctx: Option<Pin<Box<Context<Y, R>>>>,
     stack: &'a mut [u8],
     parent: [*mut c_void; 5],
-    func: Option<Box<F>>,
+    func: Box<F>,
 }
 
 impl<Y, R, F> Debug for Coroutine<'_, Y, R, F>
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ctx) = self.ctx.as_ref() {
@@ -211,7 +211,7 @@ where
 
 unsafe extern "C" fn callback<Y, R, F>(c: *mut c_void) -> !
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     eprintln!(
         "callback(): c {:#?}\n",
@@ -241,7 +241,7 @@ where
         (*coro).parent
     );
 
-    let fnc = (*coro).func.take().unwrap();
+    let fnc = &mut *(*coro).func;
 
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
@@ -260,7 +260,7 @@ where
 
 impl<'a, Y, R, F> Coroutine<'a, Y, R, F>
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     /// Spawns a new coroutine.
     ///
@@ -286,7 +286,7 @@ where
         let mut cor = Box::new(Coroutine {
             ctx: Some(Box::pin(Context::<Y, R>::default())),
             stack: stack,
-            func: Some(Box::new(func)),
+            func: Box::new(func),
             parent: [ptr::null_mut(); 5],
         });
 
@@ -377,7 +377,7 @@ impl<'a, Y, R> Control<'a, Y, R> {
 
 impl<'a, Y, R, F> Generator for Coroutine<'a, Y, R, F>
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     type Yield = Y;
     type Return = R;
@@ -412,7 +412,7 @@ where
 
 impl<'a, Y, R, F> Drop for Coroutine<'a, Y, R, F>
 where
-    F: FnOnce(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
+    F: FnMut(Control<'_, Y, R>) -> Result<Finished<R>, Canceled>,
 {
     fn drop(&mut self) {
         // If we are still able to resume the coroutine, do so.
