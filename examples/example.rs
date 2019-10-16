@@ -9,7 +9,10 @@ fn main() {
     // Then, you can initialize with `Coroutine::new`.
     let mut coro = Coroutine::new(stack.as_mut(), |c| {
         let c = c.r#yield(1)?; // Yield an integer value.
-        c.done("foo") // Return a string value.
+        eprintln!("after yield");
+        let done = c.done("foo"); // Return a string value.
+        eprintln!("after done");
+        done
     });
 
     // You can also interact with the yielded and returned values.
@@ -21,4 +24,5 @@ fn main() {
         GeneratorState::Complete("foo") => {}
         _ => panic!("unexpected return from resume"),
     }
+    eprintln!("All done!")
 }
