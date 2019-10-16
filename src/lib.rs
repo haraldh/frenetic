@@ -245,7 +245,7 @@ where
 
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
-    if let Ok(r) = (fnc)(Control(&mut (*coro).ctx.as_mut().unwrap())) {
+    if let Ok(r) = (fnc)(Control((*coro).ctx.as_mut().unwrap())) {
         let _ = (*coro)
             .ctx
             .as_mut()
@@ -330,7 +330,7 @@ where
     }
 }
 
-pub struct Control<'a, Y, R>(&'a mut Context<Y, R>);
+pub struct Control<'a, Y, R>(&'a mut Pin<Box<Context<Y, R>>>);
 
 impl<'a, Y, R> Control<'a, Y, R> {
     /// Pauses execution of this coroutine, saves function position, and passes
