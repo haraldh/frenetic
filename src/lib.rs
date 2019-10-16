@@ -220,7 +220,7 @@ where
 
     // Cast the incoming pointers to their correct types.
     // See `Coroutine::new()`.
-    let coro = c as *mut Coroutine<'_, Y, R, F>;
+    let coro = (c as *mut Coroutine<'_, Y, R, F>).as_mut().unwrap();
 
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
@@ -228,25 +228,25 @@ where
 
     eprintln!(
         "callback(): before jump_swap {:#?}\np: {:#?}\n",
-        (*coro).ctx.as_ref(),
-        (*coro).parent,
+        coro.ctx.as_ref(),
+        coro.parent,
     );
     jump_swap(
-        (*coro).ctx.as_mut().unwrap().child.as_mut_ptr() as _,
-        (*coro).parent.as_mut_ptr() as _,
+        coro.ctx.as_mut().unwrap().child.as_mut_ptr() as _,
+        coro.parent.as_mut_ptr() as _,
     );
     eprintln!(
         "callback(): after jump_swap {:#?}\np: {:#?}\n",
-        (*coro).ctx.as_ref(),
-        (*coro).parent
+        coro.ctx.as_ref(),
+        coro.parent
     );
 
-    let fnc = &mut *(*coro).func;
+    let fnc = coro.func.as_mut();
 
     // Call the closure. If the closure returns, then move the return value
     // into the argument variable in `Generator::resume()`.
-    if let Ok(r) = (fnc)(Control((*coro).ctx.as_mut().unwrap())) {
-        let _ = (*coro)
+    if let Ok(r) = (fnc)(Control(coro.ctx.as_mut().unwrap())) {
+        let _ = coro
             .ctx
             .as_mut()
             .unwrap()
@@ -255,7 +255,7 @@ where
     }
 
     // We cannot be resumed, so jump away forever.
-    jump_into((*coro).ctx.as_mut().unwrap().parent.as_mut_ptr() as _);
+    jump_into(coro.ctx.as_mut().unwrap().parent.as_mut_ptr() as _);
 }
 
 impl<'a, Y, R, F> Coroutine<'a, Y, R, F>
