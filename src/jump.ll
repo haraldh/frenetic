@@ -22,12 +22,3 @@ nounwind
   call void %gfunc(i8* %gc) noreturn; Call %func(%buff, %c, %f)
   unreachable
 }
-
-define dso_local zeroext i1 @stk_grows_up(i8*) noinline nounwind {
-  %2 = alloca i8*, align 8
-  store i8* %0, i8** %2, align 8
-  %3 = load i8*, i8** %2, align 8
-  %4 = bitcast i8** %2 to i8*
-  %5 = icmp ult i8* %3, %4
-  ret i1 %5
-}

@@ -72,7 +72,7 @@ use core::ptr;
 use std::fmt::Debug;
 
 const STACK_ALIGNMENT: usize = 16;
-pub const STACK_MINIMUM: usize = 4096 * 2;
+pub const STACK_MINIMUM: usize = 4096;
 
 extern "C" {
     fn jump_into(into: *mut [*mut c_void; 5]) -> !;
@@ -213,11 +213,6 @@ unsafe extern "C" fn callback<Y, R, F>(c: *mut c_void) -> !
 where
     F: FnMut(Pin<&mut Control<'_, Y, R>>) -> Result<Finished<R>, Canceled>,
 {
-    eprintln!(
-        "callback(): c {:#?}\n",
-        *(c as *const Coroutine<'_, Y, R, F>)
-    );
-
     // Cast the incoming pointers to their correct types.
     // See `Coroutine::new()`.
     let coro = (c as *mut Coroutine<'_, Y, R, F>).as_mut().unwrap();
@@ -225,22 +220,9 @@ where
     // Yield control to the parent. The first call to `Generator::resume()`
     // will resume at this location. The `Coroutine::new()` function is
     // responsible to move the closure into this stack while we are yielded.
-
-    eprintln!(
-        "callback(): before jump_swap {:#?}\np: {:p} {:#?}\n",
-        coro.ctx.as_ref(),
-        &coro.parent,
-        coro.parent,
-    );
-
     jump_swap(
         coro.ctx.as_mut().unwrap().child.as_mut_ptr() as _,
         coro.parent.as_mut_ptr() as _,
-    );
-    eprintln!(
-        "callback(): after jump_swap {:#?}\np: {:#?}\n",
-        coro.ctx.as_ref(),
-        coro.parent
     );
 
     let fnc = coro.func.as_mut();
@@ -255,8 +237,6 @@ where
             .arg
             .replace(Box::new(GeneratorState::Complete(r.0)));
     }
-
-    eprintln!("callback(): before jump_into {:#?}\n", coro.ctx.as_ref(),);
 
     // We cannot be resumed, so jump away forever.
     jump_into(coro.ctx.as_mut().unwrap().parent.as_mut_ptr() as _);
@@ -311,15 +291,6 @@ where
                 }
             };
 
-            eprintln!("Stack {:p} - {:p}\n", cor.stack.as_mut_ptr(), top);
-
-            let mut buff: [*mut c_void; 5] = [ptr::null_mut(); 5];
-            eprintln!("new(): before jump_init cor {:#?}\n", &mut cor,);
-            eprintln!(
-                "new(): before jump_init {:#?}\np: {:#?}\n",
-                cor.ctx.as_ref(),
-                buff.as_mut_ptr()
-            );
             // Call into the callback on the specified stack.
             jump_init(
                 cor.parent.as_mut_ptr() as _,
@@ -327,7 +298,6 @@ where
                 cor.as_mut() as *mut _ as _,
                 callback::<Y, R, F>,
             );
-            eprintln!("new(): after jump_init {:?}\n", cor);
         }
 
         cor
@@ -354,10 +324,8 @@ impl<'a, Y, R> Control<'a, Y, R> {
         ctx.arg = Some(Box::new(GeneratorState::Yielded(arg)));
 
         unsafe {
-            eprintln!("yield(): before jump_swap {:#?}\n", ctx);
             // Save our current position and yield control to the parent.
             jump_swap(ctx.child.as_mut_ptr() as _, ctx.parent.as_mut_ptr() as _);
-            eprintln!("yield(): after jump_swap {:#?}\n", ctx);
 
             if (&mut ctx.canceled as *mut bool).read_volatile() {
                 return Err(Canceled(()));
@@ -391,10 +359,8 @@ where
             None => panic!("Called Generator::resume() after completion!"),
             Some(ref mut p) => unsafe {
                 p.arg = None;
-                eprintln!("resume(): before jump_swap {:#?}\n", p);
                 // Jump back into the child.
                 jump_swap(p.parent.as_mut_ptr() as _, p.child.as_mut_ptr() as _);
-                eprintln!("resume(): after jump_swap {:#?}\n", p);
             },
         }
 
