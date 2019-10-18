@@ -20,6 +20,12 @@ fn main() {
     }
 
     cc::Build::new()
+        .no_default_flags(true)
+        .file("src/jump_swap.c")
+        .flag("-fPIC")
+        .compile("jump_swap");
+
+    cc::Build::new()
         .file("src/jump.ll")
         .flag("-x")
         .flag("ir")

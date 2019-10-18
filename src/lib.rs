@@ -72,7 +72,7 @@ use core::ptr;
 use std::fmt::Debug;
 
 const STACK_ALIGNMENT: usize = 16;
-pub const STACK_MINIMUM: usize = 4096;
+pub const STACK_MINIMUM: usize = 4096 * 2;
 
 extern "C" {
     fn jump_into(into: *mut [*mut c_void; 5]) -> !;
@@ -227,8 +227,9 @@ where
     // responsible to move the closure into this stack while we are yielded.
 
     eprintln!(
-        "callback(): before jump_swap {:#?}\np: {:#?}\n",
+        "callback(): before jump_swap {:#?}\np: {:p} {:#?}\n",
         coro.ctx.as_ref(),
+        &coro.parent,
         coro.parent,
     );
 
