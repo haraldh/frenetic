@@ -26,7 +26,7 @@
 //! let mut stack = [0u8; STACK_MINIMUM * 8];
 //!
 //! // Then, you can initialize with `Coroutine::new`.
-//! let mut coro = Coroutine::new(stack.as_mut(), |c| {
+//! let mut coro = Coroutine::new(Pin::new(stack.as_mut()), |c| {
 //!     let c = c.r#yield(1)?; // Yield an integer value.
 //!     c.done("foo") // Return a string value.
 //! });
@@ -98,8 +98,8 @@ impl<Y, R> Debug for Context<Y, R> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:p}: parent: {:#?} , child {:#?}",
-            self as *const _, self.parent, self.child
+            "{:p}: parent: {:p} {:#?} , {:p} child {:#?}",
+            self as *const _, &self.parent, self.parent, &self.child, self.child
         )?;
         Ok(())
     }
@@ -190,7 +190,7 @@ where
     F: FnMut(Pin<&mut Control<'_, Y, R>>) -> Result<Finished<R>, Canceled>,
 {
     ctx: Option<Pin<Box<Context<Y, R>>>>,
-    stack: &'a mut [u8],
+    stack: Pin<&'a mut [u8]>,
     parent: [*mut c_void; 5],
     func: Box<F>,
 }
@@ -231,6 +231,7 @@ where
         coro.ctx.as_ref(),
         coro.parent,
     );
+
     jump_swap(
         coro.ctx.as_mut().unwrap().child.as_mut_ptr() as _,
         coro.parent.as_mut_ptr() as _,
@@ -254,6 +255,8 @@ where
             .replace(Box::new(GeneratorState::Complete(r.0)));
     }
 
+    eprintln!("callback(): before jump_into {:#?}\n", coro.ctx.as_ref(),);
+
     // We cannot be resumed, so jump away forever.
     jump_into(coro.ctx.as_mut().unwrap().parent.as_mut_ptr() as _);
 }
@@ -275,7 +278,7 @@ where
     /// recommend the stack include a guard page.
     ///
     /// * `func` - The closure to be executed as part of the coroutine.
-    pub fn new(stack: &'a mut [u8], func: F) -> Box<Self> {
+    pub fn new(stack: Pin<&'a mut [u8]>, func: F) -> Box<Self> {
         assert!(stack.len() >= STACK_MINIMUM);
 
         // These variables are going to receive output from the callback
@@ -413,12 +416,19 @@ where
     F: FnMut(Pin<&mut Control<'_, Y, R>>) -> Result<Finished<R>, Canceled>,
 {
     fn drop(&mut self) {
-        // If we are still able to resume the coroutine, do so.
-        if let Some(ref mut x) = self.ctx {
-            unsafe {
-                // set the argument pointer to null, `Control::r#yield()` will return `Canceled`.
-                x.canceled = true;
-                jump_swap(x.parent.as_mut_ptr() as _, x.child.as_mut_ptr() as _);
+        inner_drop(unsafe { Pin::new_unchecked(self) });
+
+        fn inner_drop<'a, Y, R, F>(this: Pin<&mut Coroutine<'a, Y, R, F>>)
+        where
+            F: FnMut(Pin<&mut Control<'_, Y, R>>) -> Result<Finished<R>, Canceled>,
+        {
+            // If we are still able to resume the coroutine, do so.
+            if let Some(ref mut x) = this.get_mut().ctx {
+                unsafe {
+                    // set the argument pointer to null, `Control::r#yield()` will return `Canceled`.
+                    x.canceled = true;
+                    jump_swap(x.parent.as_mut_ptr() as _, x.child.as_mut_ptr() as _);
+                }
             }
         }
     }
@@ -432,7 +442,7 @@ mod tests {
     fn stack() {
         let mut stack = [1u8; STACK_MINIMUM * 4];
 
-        let mut coro = Coroutine::new(stack.as_mut(), |c| {
+        let mut coro = Coroutine::new(Pin::new(stack.as_mut()), |c| {
             let c = c.r#yield(1)?;
             c.done("foo")
         });
@@ -450,7 +460,7 @@ mod tests {
 
     #[test]
     fn heap() {
-        let mut stack = Box::new([1u8; STACK_MINIMUM]);
+        let mut stack = Box::pin([0u8; STACK_MINIMUM * 4]);
 
         let mut coro = Coroutine::new(stack.as_mut(), |c| {
             let c = c.r#yield(1)?;
@@ -475,7 +485,7 @@ mod tests {
         {
             let mut stack = [1u8; STACK_MINIMUM];
 
-            let mut coro = Coroutine::new(stack.as_mut(), |c| match c.r#yield(1) {
+            let mut coro = Coroutine::new(Pin::new(stack.as_mut()), |c| match c.r#yield(1) {
                 Ok(c) => c.done("foo"),
                 Err(v) => {
                     cancelled = true;
@@ -498,7 +508,7 @@ mod tests {
     fn coro_early_drop_yield_done() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(stack.as_mut(), |c| {
+        let _coro = Coroutine::new(Pin::new(stack.as_mut()), |c| {
             let c = c.r#yield(1)?;
             c.done("foo")
         });
@@ -508,35 +518,39 @@ mod tests {
     fn coro_early_drop_done_only() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(stack.as_mut(), |c: Pin<&mut Control<'_, i32, &str>>| {
-            c.done("foo")
-        });
+        let _coro = Coroutine::new(
+            Pin::new(stack.as_mut()),
+            |c: Pin<&mut Control<'_, i32, &str>>| c.done("foo"),
+        );
     }
 
     #[test]
     fn coro_early_drop_result_ok() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(stack.as_mut(), |_c: Pin<&mut Control<'_, i32, &str>>| {
-            Ok(Finished("foo"))
-        });
+        let _coro = Coroutine::new(
+            Pin::new(stack.as_mut()),
+            |_c: Pin<&mut Control<'_, i32, &str>>| Ok(Finished("foo")),
+        );
     }
 
     #[test]
     fn coro_early_drop_result_err() {
         let mut stack = [1u8; STACK_MINIMUM];
 
-        let _coro = Coroutine::new(stack.as_mut(), |_c: Pin<&mut Control<'_, i32, &str>>| {
-            Err(Canceled(()))
-        });
+        let _coro = Coroutine::new(
+            Pin::new(stack.as_mut()),
+            |_c: Pin<&mut Control<'_, i32, &str>>| Err(Canceled(())),
+        );
     }
 
     #[test]
     #[should_panic(expected = "stack.len() >= STACK_MINIMUM")]
     fn small_stack() {
         let mut stack = [1u8; STACK_MINIMUM - 1];
-        let _coro = Coroutine::new(stack.as_mut(), |_c: Pin<&mut Control<'_, i32, &str>>| {
-            Err(Canceled(()))
-        });
+        let _coro = Coroutine::new(
+            Pin::new(stack.as_mut()),
+            |_c: Pin<&mut Control<'_, i32, &str>>| Err(Canceled(())),
+        );
     }
 }

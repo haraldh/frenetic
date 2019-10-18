@@ -7,7 +7,7 @@ fn main() {
     let mut stack = Box::new([0u8; 8 * STACK_MINIMUM]);
 
     // Then, you can initialize with `Coroutine::new`.
-    let mut coro = Coroutine::new(stack.as_mut(), |c| {
+    let mut coro = Coroutine::new(Pin::new(stack.as_mut()), |c| {
         let c = c.r#yield(1)?; // Yield an integer value.
         eprintln!("after yield");
         let done = c.done("foo"); // Return a string value.
