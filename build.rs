@@ -21,16 +21,16 @@ fn main() {
 
     cc::Build::new()
         .no_default_flags(true)
-        .file("src/jump_swap.c")
+        .file("src/jump.c")
         .flag("-fPIC")
-        .compile("jump_swap");
+        .compile("jump");
 
     cc::Build::new()
-        .file("src/jump.ll")
+        .file("src/jump_stack.ll")
         .flag("-x")
         .flag("ir")
         .flag("-Wno-override-module")
-        .compile("jump");
+        .compile("jump_stack");
 
     if probe("#![feature(generator_trait)] fn main() {}") {
         println!("cargo:rustc-cfg=has_generator_trait");
