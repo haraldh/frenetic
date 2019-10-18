@@ -22,13 +22,18 @@ fn main() {
     cc::Build::new()
         .no_default_flags(true)
         .file("src/jump.c")
+        .pic(true)
         .flag("-fPIC")
+        .static_flag(true)
+        .shared_flag(false)
         .compile("jump");
 
     cc::Build::new()
         .file("src/jump_stack.ll")
         .flag("-x")
         .flag("ir")
+        .static_flag(true)
+        .shared_flag(false)
         .flag("-Wno-override-module")
         .compile("jump_stack");
 
